@@ -3,13 +3,74 @@ description: Brain session 收尾——寫 ceremony、更新 memory/ 模組、�
 argument-hint: [session 標題，例如 "2026-08-24-weekly-review"；不給就自己從對話判斷]
 ---
 
-這是任何 brain 資料夾（例如 `SALES BRAIN`、`RESEARCH BRAIN`）session 結束時的標準收尾指令。在哪個 brain 的 project 裡跑，sessions/ 和 memory/ 就整理在那個 brain 裡。**不要在 session 結束後才做這些事；每次有決策拍板就立即同步，`/close` 是最後確認，不是第一次寫。**
+這是任何 brain 資料夾（AMAZON BRAIN / CHURON BRAIN / ARITECH BRAIN 等）session 結束時的標準收尾指令。在哪個 brain 的 project 裡跑，sessions/ 和 memory/ 就整理在那個 brain 裡。**不要在 session 結束後才做這些事；每次有決策拍板就立即同步，`/close` 是最後確認，不是第一次寫。**
 
 ---
 
 ## Step 0 — 確認 brain 根目錄
 
 先確認你在哪個 brain 的 project 裡，確定 `CLAUDE.md`、`sessions/`、`memory/` 這三個路徑都在同一個根目錄下。這個 brain 的所有產出都只進這個根目錄，不跨 brain。
+
+**絕對禁止刪除任何不是這次 session 建立的檔案。** 看到不認識、不在預期內、或看起來壞掉的檔案——那極可能是另一個 session 正在進行中的產出。停下來問使用者，不准自行判斷是殘留物而清掉。
+
+---
+
+## Step 0.5 — 取寫入鑰匙 🔑
+
+同一個 brain 可能同時開著好幾個 session（PPC 一個、財務一個⋯）。`memory/`、`CLAUDE.md`、各層 `README.md` 和 `git add` 是**共用資源**，同時寫會互相覆蓋。所以要先拿鑰匙。
+
+（`sessions/` 不需要鑰匙——Step 2 的 append-only 規則已讓每個 session 只寫自己的新資料夾，天生不會撞。）
+
+**鑰匙檔：`<BRAIN_ROOT>/.brain-key.md`**（每個 brain 各一把，不進 git）
+
+### 先知道自己是誰
+
+用 `ListAgents` 取得本 session 名稱（回覆第一行「This session is ...」），例如 `averychiang-45`。下面用 `<ME>` 代表它。
+
+### 讀鑰匙
+
+```bash
+cd "<BRAIN_ROOT>"
+cat .brain-key.md
+date -u +%Y-%m-%dT%H:%M:%SZ    # 現在時間，用來跟 expires 比對
+```
+
+依 MACHINE BLOCK 的 `status` 分三種走法：
+
+**(A) `status: free` → 直接進門**
+
+```bash
+NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+EXP=$(date -u -v+4H +%Y-%m-%dT%H:%M:%SZ)
+```
+
+把 `.brain-key.md` 的 MACHINE BLOCK 改成 `status: held`、`holder: <ME>`、`holder_since: $NOW`、`expires: $EXP`、`doing:` 填一句話說明這次要做什麼。**只改 MACHINE BLOCK，上面的使用說明原封不動。**
+
+寫完**一定要 read-back 驗證**（防兩個 session 同時搶）：
+
+```bash
+cat .brain-key.md | grep -E "^holder:|^status:"
+```
+
+`holder` 不是 `<ME>` → 表示搶輸了，當作情況 (B) 處理，不准硬寫。
+
+**(B) `status: held` 且 `expires` 還沒到 → 敲門**
+
+不准自己寫任何共用資源。用 `SendMessage` 送給 `holder` 那個 session：
+
+> 我是 `<ME>`，在 `<BRAIN>` 要改 `<檔案路徑>` 的 `<段落>`，內容是 `<一句話>`。跟你正在做的事衝突嗎？可以借我鑰匙嗎？
+
+- **對方說可以** → 請對方在鑰匙檔填 `lent_to: <ME>`、`lent_scope: <只有那個檔案那個段落>`。你只做這一件事，做完 `SendMessage` 回報對方，由對方清掉 `lent_to`/`lent_scope`。**不准順手多改別的。**
+- **對方說不行** → 停止。把要做的事寫進自己的 session 文件當待辦，Step 7 明列出來給使用者。
+- **對方沒回應**（busy 或 offline）→ **不准自己判斷「他大概掛了」**。停下來回報使用者，由使用者決定是否強制收回。
+
+**(C) `status: held` 但 `expires` 已過 → 逾期，仍要問人**
+
+租期 4 小時。逾期**不等於**自動放行，只代表你可以拿這件事去問使用者：「鑰匙在 `<holder>` 手上但已逾期 X 小時，要收回嗎？」等使用者說了才收。
+
+### 拿不到鑰匙怎麼辦
+
+**Step 2 照做**——寫自己的 session 文件不需要鑰匙。Step 3–6 全部跳過，在 Step 7 明白寫出「因未取得鑰匙而未執行的項目」。
 
 ---
 
@@ -75,12 +136,25 @@ status: ...
 **Lightweight Log 格式：**
 
 ```markdown
-<!-- LLM: 此 session 為輕量紀錄（純輸出，無架構決策）。 -->
+<!-- LLM: 此 session 為輕量紀錄（純輸出，無架構決策）。結構化資料 → 直接跳至文末「🤖 MACHINE BLOCK」 -->
 # YYYY-MM-DD · <Topic>（Lightweight）
 
 ## 產出
 ## 備註
+
+## 🤖 MACHINE BLOCK
+\`\`\`yaml
+session_id: YYYY-MM-DD-topic
+type: lightweight
+status: done
+outputs:              # 這次產出的檔案路徑 / 試算表 ID，逐項列
+  - ...
+key_numbers: {}       # 關鍵數字（沒有就留 {}）
+touched_modules: []   # 這次動到的 memory/ 模組（沒有就留 []）
+\`\`\`
 ```
+
+**Lightweight 也一定要有 MACHINE BLOCK。** 沒有決策不代表沒有結構化資料——產出的檔案路徑、試算表 ID、關鍵數字，都是之後 LLM 要靠這裡撈的。欄位沒內容就留空容器（`{}` / `[]`），不要整段省略。
 
 ---
 
@@ -127,11 +201,13 @@ status: ...
 
 ## Step 6 — Staging + 提醒 commit
 
+**前提：只有持鑰匙的 session 能跑 `git add`。** `.git/index` 是最不能共用的資源——兩個 session 同時 `git add` 會撞 `.git/index.lock`，而 sandbox 封鎖 `rm`，agent 清不掉，只能由使用者到 Terminal 手動處理。沒鑰匙就整個 Step 6 跳過，在 Step 7 寫明「檔案已改好但未 staged，待取得鑰匙後補」。
+
 **只 add 這次 Step 2–5 實際新建/修改過的檔案，逐一列出路徑，絕對不要對整個 `sessions/`、`memory/`、`wiki/` 資料夾下 `git add`。** 這幾個資料夾裡常常躺著其他 session 還沒 commit 的改動，整包 add 進去會把不相干的檔案也一起 staged。
 
 **Agent 可以做（device_bash）：**
 ```bash
-# 找出 brain 根目錄在 mnt/ 下的名稱，例如 "SALES BRAIN"
+# 找出 brain 根目錄在 mnt/ 下的名稱，例如 "AMAZON BRAIN" 或 "CHURON BRAIN"
 cd "$HOME/mnt/<BRAIN_FOLDER_NAME>"
 
 # 只 add 這次 session 實際動到的檔案（明確列路徑，不要用資料夾）
@@ -155,7 +231,9 @@ cd "<BRAIN_ROOT_PATH>"
 git commit -m "session: <session-id> — <一句話說明>"
 ```
 
-其中 `<BRAIN_ROOT_PATH>` 是該 brain 在本機的絕對路徑，例如 `$HOME/Documents/SALES BRAIN`（以實際路徑為準）。
+其中 `<BRAIN_ROOT_PATH>` 例如：
+- AMAZON BRAIN → `/Users/averychiang/Documents/AMAZON BRAIN`
+- CHURON BRAIN → `/Users/averychiang/Documents/CHURON BRAIN`（以實際路徑為準）
 
 ---
 
@@ -172,4 +250,18 @@ git commit -m "session: <session-id> — <一句話說明>"
 
 **接著列：**
 - 哪些東西因為範圍不確定被跳過，需要使用者確認
-- **Terminal git commit 指令**（永遠要提，永遠放在最後）
+- **因為鑰匙而沒做成的事**：沒拿到鑰匙所以跳過的步驟、敲門被拒的項目、對方沒回應待使用者裁決的項目——逐項列，不要含糊帶過
+
+**最後歸還鑰匙 🔑**（只要 Step 0.5 拿到過，就一定要還）：
+
+把 `.brain-key.md` 的 MACHINE BLOCK 改回 `status: free`，`holder` / `holder_since` / `expires` / `doing` / `lent_to` / `lent_scope` 全部設為 `null`。**用覆寫，不要刪檔**（sandbox 封鎖 `rm`，而且鑰匙檔本身必須一直存在）。
+
+還完 read-back 確認一次：
+
+```bash
+grep -E "^status:|^holder:" "<BRAIN_ROOT>/.brain-key.md"
+```
+
+若這次是**跟別人借**的（情況 B），不要動 `status`/`holder`——那是屋主的。改成 `SendMessage` 回報屋主你做完了，由屋主清 `lent_to`/`lent_scope`。
+
+**最後放 Terminal git commit 指令**（永遠要提，永遠放在最後）
